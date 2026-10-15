@@ -1,0 +1,91 @@
+ONNX 语义分割服务使用说明
+
+1. 启动
+双击当前文件夹中的 onnx-seg-server.exe。
+程序会读取它所在目录下的 config 和 models，不需要输入命令，也不需要 Python。
+模型加载和预热可能需要十几到几十秒；看到下面这一行说明启动完成：
+Listening on http://127.0.0.1:9600
+保留这个窗口即可继续提供服务，关闭窗口或按 Ctrl+C 停止服务。
+
+2. 模型和配置放在哪里
+D:\GitHubProject\onnx-seg-server\
+  onnx-seg-server.exe
+  models\
+    1001_004_JLD.onnx
+    1003_010_SX.onnx
+  config\
+    1001_004.json
+    1003_010.json
+  *.dll
+
+ONNX 文件放 models 文件夹。
+JSON 文件放 config 文件夹。
+EXE 旁边的 DLL 是运行库，请保留。移动服务时，把 EXE、这些 DLL、models、config 一起移动。
+
+3. 当前真实模型
+模型：models\1001_004_JLD.onnx
+配置：config\1001_004.json
+检测项 catagory=1001，模型号 item=4。
+当前已经改为整图缩放，cut_flag=0。
+颜色：类别 0 黑色，类别 1 白色。输出 PNG 与原图尺寸一致。
+
+SX 模型：models\1003_010_SX.onnx
+配置：config\1003_010.json
+检测项 catagory=1003，模型号 item=10。
+整图模式（cut_flag=0），输入 1024×1024。
+保持比例缩放并居中补 128 灰边（resize_mode=letterbox）。
+RGB/255 后使用 mean=[0.485,0.456,0.406]、std=[0.229,0.224,0.225]。
+类别 0 黑色，类别 1 白色，返回原图尺寸 PNG。
+模型包含 seg 和 boundary，程序选择两类分割输出 seg。
+这套输入处理已按用户提供的模型 transforms 配置；使用原始 ONNX，归一化在服务中执行。
+返回 mask 前先去除 letterbox 灰边，再恢复原图尺寸。
+
+4. 新增模型
+把新 ONNX 放入 models，再在 config 新建一个 JSON。
+例如检测项 1000、模型号 1，配置文件命名为 1000_001.json。
+配置中的 model_name 只填 models 内的文件名或相对子目录路径。
+input_shape、num_classes 和 colors 需要与实际 ONNX 一致。
+resize_mode 可选 stretch（默认直接缩放）或 letterbox（保持比例补灰）。
+mean/std 必须同时填写三个 RGB 通道的数值；std 需要为正。
+已经在 ONNX 图内做了归一化时，不要再填写 mean/std。
+修改模型或 JSON 后，关闭服务并重新双击 EXE，配置才会生效。
+JSON 请保存为 UTF-8 编码。
+
+当前模型配置示例：
+{
+  "catagory": "1001",
+  "item": 4,
+  "model_detail": {
+    "model_name": "1001_004_JLD.onnx",
+    "input_shape": [1024, 1024],
+    "num_classes": 2,
+    "colors": [[0, 0, 0], [255, 255, 255]],
+    "cut_flag": 0,
+    "stride": 768
+  }
+}
+
+cut_flag=0：整图缩放，stride 不参与推理。
+cut_flag=1：切图滑窗，stride 必须是正整数且不大于窗口高、宽。
+
+5. 调用
+接口：http://127.0.0.1:9600/infer
+方法：POST，multipart/form-data。
+file：图片文件。
+catagory：检测项，例如 1001。
+item：模型号，例如 4。
+成功返回彩色 mask PNG，失败返回含 error 字段的 JSON。
+浏览器打开 http://127.0.0.1:9600/health 可以查看服务状态。
+
+6. 启动错误
+如果配置不匹配、模型无法加载或 9600 端口被占用，窗口会显示 Startup failed 及具体原因。
+直接双击启动时，出错窗口会等待回车，便于读取错误信息。
+
+
+OpenVINO 试验模式（CPU FP32）
+双击当前文件夹的 启动_OpenVINO.cmd，等待 Listening on http://127.0.0.1:9600。
+模型仍放 models，配置仍放 config，请求和输出都不变。
+切换模式前关闭正在运行的服务窗口，以免占用同一个 9600 端口。
+普通模式仍可双击 onnx-seg-server.exe。
+本次 SX 交替短测显示约 7.6% 的中位耗时减少，mask 完全一致；具体速度随机器性能状态变化。
+详细报告：docs/SX_OPENVINO_TEST.md。运行无需 Python，请保留 openvino 文件夹中的运行库。

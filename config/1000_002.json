@@ -1,0 +1,31 @@
+{
+  "catagory": "1000",
+  "item": 2,
+  "model_detail": {
+    "model_name": "demo_rgb.onnx",
+    "input_shape": [
+      32,
+      40
+    ],
+    "num_classes": 3,
+    "colors": {
+      "0": [
+        255,
+        0,
+        0
+      ],
+      "1": [
+        0,
+        255,
+        0
+      ],
+      "2": [
+        0,
+        0,
+        255
+      ]
+    },
+    "cut_flag": 1,
+    "stride": 24
+  }
+}

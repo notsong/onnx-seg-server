@@ -1,0 +1,26 @@
+{
+  "catagory": "1001",
+  "item": 4,
+  "model_detail": {
+    "model_name": "1001_004_JLD.onnx",
+    "input_shape": [
+      1024,
+      1024
+    ],
+    "num_classes": 2,
+    "colors": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        255,
+        255,
+        255
+      ]
+    ],
+    "cut_flag": 0,
+    "stride": 768
+  }
+}

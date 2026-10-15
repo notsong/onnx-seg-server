@@ -1,0 +1,46 @@
+[
+  {
+    "name": "cpp-httplib 0.26.0",
+    "path": "third_party/httplib.h",
+    "url": "https://raw.githubusercontent.com/yhirose/cpp-httplib/v0.26.0/httplib.h",
+    "sha256": "4A42DA28CE477D06F53942C172197D3B83B4FE42B7E37B8AF78C70E063C06DA7"
+  },
+  {
+    "name": "nlohmann/json 3.11.3",
+    "path": "third_party/json.hpp",
+    "url": "https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp",
+    "sha256": "9BEA4C8066EF4A1C206B2BE5A36302F8926F7FDC6087AF5D20B417D0CF103EA6"
+  },
+  {
+    "name": "ONNX Runtime CPU 1.22.0",
+    "path": "deps/downloads/onnxruntime-win-x64-1.22.0.zip",
+    "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-win-x64-1.22.0.zip",
+    "sha256": "174C616EFC0271194488642A72F1A514E01487DA4DFE84C49296D66E40EBE0DA"
+  },
+  {
+    "name": "OpenCV 4.12.0 Windows",
+    "path": "deps/downloads/opencv-4.12.0-windows.exe",
+    "url": "https://github.com/opencv/opencv/releases/download/4.12.0/opencv-4.12.0-windows.exe",
+    "sha256": "B753B14D880B9BC8D89D6ACD3B665C040BAEC0211078435432FCAE117DB707AF"
+  },
+  {
+    "name": "7-Zip 26.04 standalone extractor (build only)",
+    "path": "deps/downloads/7zr.exe",
+    "url": "https://www.7-zip.org/a/7zr.exe",
+    "sha256": "256FECA8E274E5DA655E2A284FABAFD9F554365EB164862089DACD4E8276D282"
+  },
+  {
+    "name": "ONNX Runtime OpenVINO 1.22.0 Windows x64",
+    "path": "deps/downloads/onnxruntime_openvino-1.22.0-cp312-cp312-win_amd64.whl",
+    "extract": "deps/onnxruntime-openvino-win-x64-1.22.0",
+    "url": "https://files.pythonhosted.org/packages/38/73/2212a23aa2ac28e037ce844b86e6f367baddc05c83bce35992fa7be05c85/onnxruntime_openvino-1.22.0-cp312-cp312-win_amd64.whl",
+    "sha256": "092446f82e52ab90d117120d321c7a726e58d77aab36d8796c29b7aa918ddb33"
+  },
+  {
+    "name": "OpenVINO 2025.1.0 Windows x64",
+    "path": "deps/downloads/openvino-2025.1.0-18503-cp312-cp312-win_amd64.whl",
+    "extract": "deps/openvino-win-x64-2025.1.0",
+    "url": "https://files.pythonhosted.org/packages/d1/8c/49f8ce231983ee47c9aa38bb660ee4161f6cd606c4c4aa7279285e4d48d9/openvino-2025.1.0-18503-cp312-cp312-win_amd64.whl",
+    "sha256": "fd19a0660e04228f8710e832b2d8cbc2134325f553b9c265e212032241596ace"
+  }
+]
