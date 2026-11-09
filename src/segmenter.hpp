@@ -35,14 +35,15 @@ Config load_config(const std::filesystem::path& file,
 class Segmenter {
 public:
     Segmenter(Ort::Env& env, Config config, int threads, size_t max_work_bytes,
-              bool use_openvino = false);
+              bool use_openvino = false, std::shared_ptr<Ort::Session> session = {});
     cv::Mat predict(const cv::Mat& image, Timings& timings);
     const Config& config() const { return config_; }
+    const std::shared_ptr<Ort::Session>& session() const { return session_; }
 private:
     std::vector<cv::Mat> infer_scores(const cv::Mat& image,
                                      cv::Size target_size, Timings& timings);
     Config config_;
-    Ort::Session session_{nullptr};
+    std::shared_ptr<Ort::Session> session_;
     std::string input_name_, output_name_;
     size_t max_work_bytes_;
 };

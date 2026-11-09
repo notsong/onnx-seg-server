@@ -76,6 +76,8 @@ POST /infer，Content-Type: multipart/form-data：
 
 1000 + 1 对应 config/1000_001.json；模型号最少补足三位，1234 对应 1000_1234.json。每个文本字段应只提交一次。catagory/item 也可放在 URL 查询参数中，不能与表单重复提交。
 
+多个配置指向同一个 ONNX 文件时，服务启动只加载一个模型会话（CPU 和 OpenVINO 均支持）。各配置仍独立校验和预热，保留自己的输入尺寸、颜色、归一化、缩放和滑窗参数。启动日志用 `Reusing model session` 标记复用，并汇总配置数和实际模型会话数；修改配置后需重启服务。
+
 成功响应：
 - Content-Type: image/png；
 - X-Model-Key：实际配置编号；
@@ -136,7 +138,7 @@ config/1000_001.json：
 
 滑窗模式在原图上切窗，末尾窗口贴齐右/下边界；不足一个窗口的维度向右或向下补黑，letterbox 配置采用 128 灰色补齐。mean/std 对每个窗口执行。每个窗口输出先恢复为窗口大小，仅取有效图像区域累计类别分数和覆盖次数；重叠区域平均后统一 argmax。不在窗口内先生成颜色图再拼接。即使 stride 等于窗口，非整除边界的末尾窗口仍可能重叠。
 
-每份配置复用一个 ONNX Runtime CPU 会话。第一版由一个 HTTP 工作线程串行处理请求，窗口逐个运行；ONNX Runtime 内部使用 CPU 多线程。日志记录 decode/preprocess/inference/postprocess/encode/total 各阶段耗时。
+指向同一个模型文件的配置共享一个 ONNX Runtime 会话。第一版由一个 HTTP 工作线程串行处理请求，窗口逐个运行；ONNX Runtime 内部使用 CPU 多线程。日志记录 decode/preprocess/inference/postprocess/encode/total 各阶段耗时。
 
 可调整：
 ```powershell

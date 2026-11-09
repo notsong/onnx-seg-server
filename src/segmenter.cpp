@@ -166,36 +166,38 @@ Config load_config(const fs::path& file, const fs::path& models_dir) {
     return result;
 }
 Segmenter::Segmenter(Ort::Env& env, Config config, int threads, size_t max_work_bytes,
-                       bool use_openvino)
-    : config_(std::move(config)), max_work_bytes_(max_work_bytes) {
+                       bool use_openvino, std::shared_ptr<Ort::Session> session)
+    : config_(std::move(config)), session_(std::move(session)), max_work_bytes_(max_work_bytes) {
     const uint64_t warm_bytes = static_cast<uint64_t>(config_.height) * config_.width *
                               (12ull + (config_.letterbox ? 6ull : 0ull) +
                                8ull * config_.classes);
     if (warm_bytes > max_work_bytes_)
         throw std::invalid_argument("Model window exceeds --max-work-mb");
-    Ort::SessionOptions options;
-    options.SetIntraOpNumThreads(threads);
-    options.SetGraphOptimizationLevel(use_openvino ? GraphOptimizationLevel::ORT_DISABLE_ALL
-                                                   : GraphOptimizationLevel::ORT_ENABLE_ALL);
-    if (use_openvino) {
-        // OpenVINO owns graph optimization; one FP32 CPU stream targets latency.
-        Ort::ThrowOnError(Ort::GetApi().AddFreeDimensionOverrideByName(options, "batch_size", 1));
-        std::unordered_map<std::string, std::string> provider{
-            {"device_type", "CPU"}, {"precision", "FP32"}, {"num_streams", "1"},
-            {"load_config", R"({"CPU":{"PERFORMANCE_HINT":"LATENCY","INFERENCE_PRECISION_HINT":"f32","SCHEDULING_CORE_TYPE":"ANY_CORE","ENABLE_CPU_PINNING":true,"ENABLE_HYPER_THREADING":false}})"}};
-        if (threads > 0) provider["num_of_threads"] = std::to_string(threads);
-        options.AppendExecutionProvider_OpenVINO_V2(provider);
+    if (!session_) {
+        Ort::SessionOptions options;
+        options.SetIntraOpNumThreads(threads);
+        options.SetGraphOptimizationLevel(use_openvino ? GraphOptimizationLevel::ORT_DISABLE_ALL
+                                                       : GraphOptimizationLevel::ORT_ENABLE_ALL);
+        if (use_openvino) {
+            // OpenVINO owns graph optimization; one FP32 CPU stream targets latency.
+            Ort::ThrowOnError(Ort::GetApi().AddFreeDimensionOverrideByName(options, "batch_size", 1));
+            std::unordered_map<std::string, std::string> provider{
+                {"device_type", "CPU"}, {"precision", "FP32"}, {"num_streams", "1"},
+                {"load_config", R"({"CPU":{"PERFORMANCE_HINT":"LATENCY","INFERENCE_PRECISION_HINT":"f32","SCHEDULING_CORE_TYPE":"ANY_CORE","ENABLE_CPU_PINNING":true,"ENABLE_HYPER_THREADING":false}})"}};
+            if (threads > 0) provider["num_of_threads"] = std::to_string(threads);
+            options.AppendExecutionProvider_OpenVINO_V2(provider);
+        }
+        options.AddConfigEntry("session.intra_op.allow_spinning", "0");
+        options.AddConfigEntry("session.inter_op.allow_spinning", "0");
+        // std::filesystem::path supplies UTF-16 on Windows.
+        session_ = std::make_shared<Ort::Session>(env, config_.model.c_str(), options);
     }
-    options.AddConfigEntry("session.intra_op.allow_spinning", "0");
-    options.AddConfigEntry("session.inter_op.allow_spinning", "0");
-    // std::filesystem::path supplies UTF-16 on Windows.
-    session_ = Ort::Session(env, config_.model.c_str(), options);
-    if (session_.GetInputCount() != 1 || session_.GetOutputCount() == 0)
+    if (session_->GetInputCount() != 1 || session_->GetOutputCount() == 0)
         throw std::invalid_argument("Model must have exactly one input and at least one output");
     Ort::AllocatorWithDefaultOptions allocator;
-    input_name_ = session_.GetInputNameAllocated(0, allocator).get();
+    input_name_ = session_->GetInputNameAllocated(0, allocator).get();
     // Keep TypeInfo alive while accessing its borrowed tensor-info wrapper.
-    auto input_type = session_.GetInputTypeInfo(0);
+    auto input_type = session_->GetInputTypeInfo(0);
     auto input_info = input_type.GetTensorTypeAndShapeInfo();
     auto shape = input_info.GetShape();
     const std::vector<int64_t> expected{1, 3, config_.height, config_.width};
@@ -206,8 +208,8 @@ Segmenter::Segmenter(Ort::Env& env, Config config, int threads, size_t max_work_
         if (shape[d] != -1 && shape[d] != expected[d])
             throw std::invalid_argument("Input shape disagrees with [1,3,H,W] config");
     // Select the unique class-score output; auxiliary boundary heads may coexist.
-    for (size_t index = 0; index < session_.GetOutputCount(); ++index) {
-        auto output_type = session_.GetOutputTypeInfo(index);
+    for (size_t index = 0; index < session_->GetOutputCount(); ++index) {
+        auto output_type = session_->GetOutputTypeInfo(index);
         if (output_type.GetONNXType() != ONNX_TYPE_TENSOR) continue;
         auto output_info = output_type.GetTensorTypeAndShapeInfo();
         auto output_shape = output_info.GetShape();
@@ -218,7 +220,7 @@ Segmenter::Segmenter(Ort::Env& env, Config config, int threads, size_t max_work_
             continue;
         if (!output_name_.empty())
             throw std::invalid_argument("Ambiguous model: multiple float32 [1,num_classes,h,w] outputs");
-        output_name_ = session_.GetOutputNameAllocated(index, allocator).get();
+        output_name_ = session_->GetOutputNameAllocated(index, allocator).get();
     }
     if (output_name_.empty())
         throw std::invalid_argument("No segmentation output: need float32 [1,num_classes,h,w]");
@@ -263,7 +265,7 @@ std::vector<cv::Mat> Segmenter::infer_scores(const cv::Mat& image,
     const char* input_names[]{input_name_.c_str()};
     const char* output_names[]{output_name_.c_str()};
     start = Clock::now();
-    auto output = session_.Run(Ort::RunOptions{nullptr}, input_names, &input, 1,
+    auto output = session_->Run(Ort::RunOptions{nullptr}, input_names, &input, 1,
                                output_names, 1);
     timings.inference_ms += milliseconds(start);
     ++timings.windows;

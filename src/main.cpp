@@ -104,14 +104,22 @@ int main(int argc, char** argv) {
         std::sort(config_files.begin(), config_files.end());
         if (config_files.empty()) throw std::runtime_error("No .json configs found");
         std::map<std::string, std::unique_ptr<seg::Segmenter>> models;
+        std::map<fs::path, std::shared_ptr<Ort::Session>> sessions;
         for (const auto& file : config_files) {
             try {
                 auto config = seg::load_config(file, root / "models");
                 auto key = seg::model_key(config.catagory, config.item);
-                std::cout << "Loading " << key << "..." << std::endl;
+                // Startup-only scan of distinct files also handles Windows case and hard links.
+                auto shared = std::find_if(sessions.begin(), sessions.end(), [&](const auto& entry) {
+                    return fs::equivalent(entry.first, config.model);
+                });
+                bool reuse = shared != sessions.end();
+                std::cout << (reuse ? "Reusing model session for " : "Loading model session for ")
+                          << key << ": " << config.model.u8string() << std::endl;
                 auto model = std::make_unique<seg::Segmenter>(
                     env, std::move(config), threads, static_cast<size_t>(work_mb) * 1024 * 1024,
-                    backend == "openvino");
+                    backend == "openvino", reuse ? shared->second : nullptr);
+                if (!reuse) sessions.emplace(model->config().model, model->session());
                 models.emplace(key, std::move(model));
                 std::cout << "Loaded and warmed " << key << '\n';
             } catch (const std::exception& exception) {
@@ -119,6 +127,8 @@ int main(int argc, char** argv) {
                                          ": " + exception.what());
             }
         }
+        std::cout << "Ready: " << models.size() << " configs, " << sessions.size()
+                  << " model sessions" << std::endl;
         httplib::Server server;
         // One worker serializes requests and bounds concurrent image buffers.
         server.new_task_queue = [] { return new httplib::ThreadPool(1, 16); };

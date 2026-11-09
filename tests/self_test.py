@@ -209,6 +209,9 @@ def main():
     lowres_letterbox_cfg = fixture_config(15, "lowres.onnx")
     lowres_letterbox_cfg["model_detail"]["resize_mode"] = "letterbox"
     configurations.append(lowres_letterbox_cfg)
+    recolor_cfg = fixture_config(16, "./RGB.onnx" if sys.platform == "win32" else "./rgb.onnx")
+    recolor_cfg["model_detail"]["colors"] = PALETTE[::-1].tolist()
+    configurations.append(recolor_cfg)
     for cfg in configurations:
         write_config(run, cfg)
     checks = []
@@ -239,8 +242,15 @@ def main():
                     startup_timeout=120 if args.backend == "openvino" else 20)
     rng = np.random.default_rng(12345)
     try:
+        startup_log = server.log_path.read_text(encoding="utf-8")
+        assert startup_log.count("Loading model session for ") == 10, startup_log
+        assert startup_log.count("Reusing model session for ") == len(configurations) - 10
+        assert f"Ready: {len(configurations)} configs, 10 model sessions" in startup_log
+        passed("same model file loads once across configs and path aliases")
         array = PALETTE[rng.integers(0, 3, size=(32, 40))]
         sample = check_mask(server, array, 1, array, "whole RGB palette and exact dimensions", 1)
+        check_mask(server, array, 16, PALETTE[::-1][np.argmax(array, axis=2)],
+                   "shared session preserves config-specific palette", 1)
         (run / "mask_example.png").write_bytes(sample)
         check_mask(server, array, 10, array, "select segmentation when auxiliary output comes first", 1)
         for height, width in [(81, 113), (9, 13), (17, 95), (90, 11), (32, 40)]:
@@ -359,6 +369,11 @@ def main():
         cfg = copy.deepcopy(configurations[0])
         mutate(cfg)
         write_config(invalid_root, cfg, "1000_001.json")
+        if name in ("class count mismatch", "input dimensions mismatch"):
+            # Validate the second config even when its session already exists.
+            write_config(invalid_root, configurations[0], "1000_001.json")
+            cfg["item"] = 2
+            write_config(invalid_root, cfg)
         process = subprocess.run(
             [str(executable), "--root", str(invalid_root), "--port", str(free_port()),
              "--threads", "1"], capture_output=True, timeout=15,
