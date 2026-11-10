@@ -66,13 +66,13 @@ int main(int argc, char** argv) {
     try {
         fs::path root = default_root();
         std::string host = "127.0.0.1", backend = "onnxruntime";
-        int port = 9600, threads = 0, work_mb = 1024;
+        int port = 9600, threads = 0, work_mb = 1024, workers = 2, gpu_device = 0;
         for (int i = 1; i < argc; ++i) {
             std::string flag = argv[i];
             if (flag == "--help") {
                 std::cout << "onnx-seg-server [--root DIR] [--host 127.0.0.1] "
                              "[--port 9600] [--threads 0] [--max-work-mb 1024] "
-                             "[--backend onnxruntime|openvino]\n";
+                             "[--backend onnxruntime|openvino|cuda|tensorrt] [--workers 2] [--gpu-device 0]\n";
                 return 0;
             }
             if (++i >= argc) throw std::invalid_argument("Missing value for " + flag);
@@ -83,16 +83,19 @@ int main(int argc, char** argv) {
             else if (flag == "--port") port = seg::parse_item(value);
             else if (flag == "--threads") threads = seg::parse_item(value);
             else if (flag == "--max-work-mb") work_mb = seg::parse_item(value);
+            else if (flag == "--workers") workers = seg::parse_item(value);
+            else if (flag == "--gpu-device") gpu_device = seg::parse_item(value);
             else throw std::invalid_argument("Unknown option: " + flag);
         }
-        if (backend != "onnxruntime" && backend != "openvino")
-            throw std::invalid_argument("backend must be onnxruntime or openvino");
-        if (port < 1 || port > 65535 || threads > 256 || work_mb < 16 || work_mb > 65536)
+        if (backend != "onnxruntime" && backend != "openvino" &&
+            backend != "cuda" && backend != "tensorrt")
+            throw std::invalid_argument("backend must be onnxruntime, openvino, cuda or tensorrt");
+        if (port < 1 || port > 65535 || threads > 256 || work_mb < 16 || work_mb > 65536 || workers < 1 || workers > 64 || gpu_device > 31)
             throw std::invalid_argument("Invalid port/threads/max-work-mb");
         root = fs::canonical(root);
         if (!fs::is_directory(root / "config"))
             throw std::runtime_error("Missing config/ under --root");
-        std::cout << "Inference backend: " << backend << " (CPU)\n"
+        std::cout << "Inference backend: " << backend << " (selected backend)\n"
                   << "Service directory: " << root.u8string() << '\n'
                   << "Configs: " << (root / "config").u8string() << '\n'
                   << "Models: " << (root / "models").u8string() << std::endl;
@@ -118,7 +121,9 @@ int main(int argc, char** argv) {
                           << key << ": " << config.model.u8string() << std::endl;
                 auto model = std::make_unique<seg::Segmenter>(
                     env, std::move(config), threads, static_cast<size_t>(work_mb) * 1024 * 1024,
-                    backend == "openvino", reuse ? shared->second : nullptr);
+                    backend == "openvino", reuse ? shared->second : nullptr,
+                    backend == "cuda" || backend == "tensorrt",
+                    backend == "tensorrt", gpu_device);
                 if (!reuse) sessions.emplace(model->config().model, model->session());
                 models.emplace(key, std::move(model));
                 std::cout << "Loaded and warmed " << key << '\n';
@@ -131,7 +136,7 @@ int main(int argc, char** argv) {
                   << " model sessions" << std::endl;
         httplib::Server server;
         // One worker serializes requests and bounds concurrent image buffers.
-        server.new_task_queue = [] { return new httplib::ThreadPool(1, 16); };
+        server.new_task_queue = [workers] { return new httplib::ThreadPool(workers, 2 * workers + 16); };
 #ifdef _WIN32
         // Prevent Windows SO_REUSEADDR from silently sharing an occupied port.
         server.set_socket_options([](socket_t socket) {
@@ -210,7 +215,7 @@ int main(int argc, char** argv) {
                 error(response, response.status, "HTTP request rejected");
         });
         std::cout << "Listening on http://" << host << ':' << port
-                  << " (CPU, serial requests)" << std::endl;
+                  << " (" << backend << ", workers=" << workers << ")" << std::endl;
         if (!server.listen(host, port))
             throw std::runtime_error("Cannot bind host/port");
         return 0;
