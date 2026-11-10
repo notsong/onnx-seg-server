@@ -166,7 +166,8 @@ Config load_config(const fs::path& file, const fs::path& models_dir) {
     return result;
 }
 Segmenter::Segmenter(Ort::Env& env, Config config, int threads, size_t max_work_bytes,
-                       bool use_openvino, std::shared_ptr<Ort::Session> session)
+                       bool use_openvino, std::shared_ptr<Ort::Session> session,
+                       bool use_cuda, bool use_tensorrt, int gpu_device)
     : config_(std::move(config)), session_(std::move(session)), max_work_bytes_(max_work_bytes) {
     const uint64_t warm_bytes = static_cast<uint64_t>(config_.height) * config_.width *
                               (12ull + (config_.letterbox ? 6ull : 0ull) +
@@ -175,9 +176,45 @@ Segmenter::Segmenter(Ort::Env& env, Config config, int threads, size_t max_work_
         throw std::invalid_argument("Model window exceeds --max-work-mb");
     if (!session_) {
         Ort::SessionOptions options;
-        options.SetIntraOpNumThreads(threads);
+        if (threads > 0) options.SetIntraOpNumThreads(threads);
+        if (use_openvino && (use_cuda || use_tensorrt))
+            throw std::invalid_argument("OpenVINO and GPU backends cannot be combined");
         options.SetGraphOptimizationLevel(use_openvino ? GraphOptimizationLevel::ORT_DISABLE_ALL
                                                        : GraphOptimizationLevel::ORT_ENABLE_ALL);
+
+        if (use_tensorrt) {
+            auto& api = Ort::GetApi();
+            OrtTensorRTProviderOptionsV2* raw_trt = nullptr;
+            Ort::ThrowOnError(api.CreateTensorRTProviderOptions(&raw_trt));
+            try {
+                const std::string device = std::to_string(gpu_device);
+                const char* keys[] = {"device_id", "trt_fp16_enable", "trt_engine_cache_enable",
+                                      "trt_engine_cache_path"};
+                const char* values[] = {device.c_str(), "1", "1", "./trt_engine_cache"};
+                Ort::ThrowOnError(api.UpdateTensorRTProviderOptions(raw_trt, keys, values, 4));
+                Ort::ThrowOnError(api.SessionOptionsAppendExecutionProvider_TensorRT_V2(options, raw_trt));
+            } catch (...) {
+                api.ReleaseTensorRTProviderOptions(raw_trt);
+                throw;
+            }
+            api.ReleaseTensorRTProviderOptions(raw_trt);
+        }
+        if (use_cuda) {
+            auto& api = Ort::GetApi();
+            OrtCUDAProviderOptionsV2* raw_cuda = nullptr;
+            Ort::ThrowOnError(api.CreateCUDAProviderOptions(&raw_cuda));
+            try {
+                const std::string device = std::to_string(gpu_device);
+                const char* keys[] = {"device_id", "cudnn_conv_use_max_workspace", "do_copy_in_default_stream"};
+                const char* values[] = {device.c_str(), "1", "1"};
+                Ort::ThrowOnError(api.UpdateCUDAProviderOptions(raw_cuda, keys, values, 3));
+                Ort::ThrowOnError(api.SessionOptionsAppendExecutionProvider_CUDA_V2(options, raw_cuda));
+            } catch (...) {
+                api.ReleaseCUDAProviderOptions(raw_cuda);
+                throw;
+            }
+            api.ReleaseCUDAProviderOptions(raw_cuda);
+        }
         if (use_openvino) {
             // OpenVINO owns graph optimization; one FP32 CPU stream targets latency.
             Ort::ThrowOnError(Ort::GetApi().AddFreeDimensionOverrideByName(options, "batch_size", 1));
