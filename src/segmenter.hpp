@@ -35,7 +35,8 @@ Config load_config(const std::filesystem::path& file,
 class Segmenter {
 public:
     Segmenter(Ort::Env& env, Config config, int threads, size_t max_work_bytes,
-              bool use_openvino = false, std::shared_ptr<Ort::Session> session = {});
+              bool use_openvino = false, std::shared_ptr<Ort::Session> session = {},
+              bool use_cuda = false, bool use_tensorrt = false, int gpu_device = 0);
     cv::Mat predict(const cv::Mat& image, Timings& timings);
     const Config& config() const { return config_; }
     const std::shared_ptr<Ort::Session>& session() const { return session_; }
