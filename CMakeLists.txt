@@ -54,3 +54,6 @@ if(WIN32)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION .)
     include(InstallRequiredSystemLibraries)
 endif()
+
+# Configure ONNXRUNTIME_ROOT to an ONNX Runtime GPU SDK for CUDA/TensorRT.
+# Runtime provider DLLs and compatible CUDA/cuDNN/TensorRT must be installed.
